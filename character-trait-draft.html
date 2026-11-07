@@ -504,7 +504,24 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     phase2Picks: {},       // category -> pick
     phase3Pool: [],        // [{name, polarity}] the 7 category winners, shuffled
     phase3Selected: [],    // chosen trait names (final 3)
+    phase1Selections: [],  // word chosen on each phase-1 question (by index), not final until Next
+    phase2Selections: [],  // option chosen on each phase-2 question (by index), not final until Next
+    phase2Sig: '',         // fingerprint of phase-1 picks used to build phase 2
+    phase3Sig: '',         // fingerprint of phase-2 picks used to build phase 3
   };
+
+  function buttonRow(onBack, onNext, nextLabel, nextEnabled){
+    const row = el('div','btn-row');
+    row.style.justifyContent = 'space-between';
+    const back = el('button','secondary','Back');
+    back.addEventListener('click', onBack);
+    const next = el('button','primary', nextLabel);
+    next.disabled = !nextEnabled;
+    next.addEventListener('click', () => { if(!next.disabled) onNext(); });
+    row.appendChild(back);
+    row.appendChild(next);
+    return row;
+  }
 
   function buildPhase1Questions(){
     const qs = [];
@@ -580,12 +597,16 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     input.type='text';
     input.placeholder='e.g. Kessa Vane';
     input.id='playerNameInput';
+    input.value = state.playerName || '';
     s.appendChild(input);
     const btnRow = el('div','btn-row');
     const startBtn = el('button','primary','Begin');
     startBtn.addEventListener('click', () => {
       state.playerName = input.value.trim();
-      state.phase1Questions = buildPhase1Questions();
+      if(!state.phase1Questions.length){
+        state.phase1Questions = buildPhase1Questions();
+        state.phase1Selections = [];
+      }
       state.phase1Index = 0;
       state.screen = 'phase1';
       render();
@@ -608,19 +629,45 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     const grid = el('div','word-grid');
     q.words.forEach(word => {
       const card = el('div','word-card', word);
+      if(state.phase1Selections[state.phase1Index] === word) card.classList.add('chosen');
       card.addEventListener('click', () => {
-        state.phase1Picks[q.category].push(word);
-        state.phase1Index++;
-        if(state.phase1Index >= state.phase1Questions.length){
-          state.phase2Questions = buildPhase2Questions();
-          state.phase2Index = 0;
-          state.screen = 'phase2';
-        }
+        state.phase1Selections[state.phase1Index] = word;
         render();
       });
       grid.appendChild(card);
     });
     s.appendChild(grid);
+    const isLast = state.phase1Index >= state.phase1Questions.length - 1;
+    s.appendChild(buttonRow(
+      () => {
+        if(state.phase1Index === 0){ state.screen = 'intro'; }
+        else { state.phase1Index--; }
+        render();
+      },
+      () => {
+        if(!isLast){ state.phase1Index++; render(); return; }
+        // rebuild the picks from the final selections so going Back never duplicates
+        CATEGORY_NAMES.forEach(c => { state.phase1Picks[c] = []; });
+        state.phase1Questions.forEach((qq, i) => {
+          state.phase1Picks[qq.category].push(state.phase1Selections[i]);
+        });
+        const sig = JSON.stringify(CATEGORY_NAMES.map(c => state.phase1Picks[c].slice().sort()));
+        if(sig !== state.phase2Sig || !state.phase2Questions.length){
+          state.phase2Sig = sig;
+          state.phase2Questions = buildPhase2Questions();
+          state.phase2Selections = [];
+          state.phase2Picks = {};
+          state.phase3Pool = [];
+          state.phase3Sig = '';
+          state.phase3Selected = [];
+        }
+        state.phase2Index = 0;
+        state.screen = 'phase2';
+        render();
+      },
+      isLast ? 'Next' : 'Next',
+      state.phase1Selections[state.phase1Index] !== undefined
+    ));
     app.appendChild(s);
   }
 
@@ -639,18 +686,41 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     const list = el('div','option-list');
     q.options.forEach(opt => {
       const row = el('div','option-row', opt);
+      if(state.phase2Selections[state.phase2Index] === opt) row.classList.add('chosen');
       row.addEventListener('click', () => {
-        state.phase2Picks[q.category] = opt;
-        state.phase2Index++;
-        if(state.phase2Index >= state.phase2Questions.length){
-          state.phase3Pool = buildPhase3Pool();
-          state.screen = 'phase3';
-        }
+        state.phase2Selections[state.phase2Index] = opt;
         render();
       });
       list.appendChild(row);
     });
     s.appendChild(list);
+    const isLast2 = state.phase2Index >= state.phase2Questions.length - 1;
+    s.appendChild(buttonRow(
+      () => {
+        if(state.phase2Index === 0){
+          state.phase1Index = state.phase1Questions.length - 1;
+          state.screen = 'phase1';
+        } else { state.phase2Index--; }
+        render();
+      },
+      () => {
+        if(!isLast2){ state.phase2Index++; render(); return; }
+        state.phase2Picks = {};
+        state.phase2Questions.forEach((qq, i) => {
+          state.phase2Picks[qq.category] = state.phase2Selections[i];
+        });
+        const sig = JSON.stringify(CATEGORY_NAMES.map(c => state.phase2Picks[c]));
+        if(sig !== state.phase3Sig || !state.phase3Pool.length){
+          state.phase3Sig = sig;
+          state.phase3Pool = buildPhase3Pool();
+          state.phase3Selected = [];
+        }
+        state.screen = 'phase3';
+        render();
+      },
+      'Next',
+      state.phase2Selections[state.phase2Index] !== undefined
+    ));
     app.appendChild(s);
   }
 
@@ -707,15 +777,16 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     });
     s.appendChild(list);
 
-    const btnRow = el('div','btn-row');
-    const finishBtn = el('button','primary','See my results');
-    finishBtn.disabled = counts.total !== 3;
-    finishBtn.addEventListener('click', () => {
-      state.screen = 'results';
-      render();
-    });
-    btnRow.appendChild(finishBtn);
-    s.appendChild(btnRow);
+    s.appendChild(buttonRow(
+      () => {
+        state.phase2Index = state.phase2Questions.length - 1;
+        state.screen = 'phase2';
+        render();
+      },
+      () => { state.screen = 'results'; render(); },
+      'See my results',
+      counts.total === 3
+    ));
 
     app.appendChild(s);
   }
