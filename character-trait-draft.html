@@ -80,6 +80,8 @@ body{
   justify-content:center;
   animation:fadein 0.35s ease;
 }
+/* no fade when only a selection changed (stops the blink) */
+.screen.still{animation:none;}
 @keyframes fadein{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 
 .eyebrow{
@@ -510,6 +512,12 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
     phase3Sig: '',         // fingerprint of phase-2 picks used to build phase 3
   };
 
+  function rerenderStill(){
+    render();
+    const sc = app.querySelector('.screen');
+    if(sc) sc.classList.add('still');
+  }
+
   function buttonRow(onBack, onNext, nextLabel, nextEnabled){
     const row = el('div','btn-row');
     row.style.justifyContent = 'space-between';
@@ -632,7 +640,7 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
       if(state.phase1Selections[state.phase1Index] === word) card.classList.add('chosen');
       card.addEventListener('click', () => {
         state.phase1Selections[state.phase1Index] = word;
-        render();
+        rerenderStill();
       });
       grid.appendChild(card);
     });
@@ -689,7 +697,7 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
       if(state.phase2Selections[state.phase2Index] === opt) row.classList.add('chosen');
       row.addEventListener('click', () => {
         state.phase2Selections[state.phase2Index] = opt;
-        render();
+        rerenderStill();
       });
       list.appendChild(row);
     });
@@ -767,10 +775,10 @@ const APP_DATA = {"groupings": {"Charisma": [["Charming", "Diplomatic", "Empathe
       row.addEventListener('click', () => {
         if(chosen){
           state.phase3Selected = state.phase3Selected.filter(n => n !== item.name);
-          render();
+          rerenderStill();
         } else if(!disabled){
           state.phase3Selected.push(item.name);
-          render();
+          rerenderStill();
         }
       });
       list.appendChild(row);
